@@ -3,28 +3,43 @@ from scipy.optimize import linear_sum_assignment
 
 # 计算最短路径距离矩阵
 def compute_distance_matrix(network):
-    size = len(network)
+    size = len(network)  # 获取网络的大小（节点数）
+    
+    # 初始化距离矩阵，所有元素初始化为正无穷
     dist = np.full((size, size), np.inf)
+    
+    # 对角线元素初始化为0，表示节点到自身的距离为0
     np.fill_diagonal(dist, 0)
 
+    # 遍历网络中的每条边
     for i in range(size):
         for j in range(size):
-            if network[i][j] != 0:
-                dist[i][j] = network[i][j]
+            if network[i][j] != 0:  # 如果存在边(i, j)
+                dist[i][j] = network[i][j]  # 初始化该边的距离
 
-    for k in range(size):
-        for i in range(size):
-            for j in range(size):
+    # 使用Floyd-Warshall算法计算最短路径距离矩阵
+    for k in range(size):  # 遍历所有中间节点k
+        for i in range(size):  # 遍历所有起点i
+            for j in range(size):  # 遍历所有终点j
+                # 如果通过节点k可以找到更短的路径，则更新dist[i][j]
                 if dist[i][j] > dist[i][k] + dist[k][j]:
                     dist[i][j] = dist[i][k] + dist[k][j]
 
-    return dist
+    return dist  # 返回计算出的最短路径距离矩阵
+
 
 # 计算两个网络节点之间的匹配关系
-def CDA(DA, DB, l): # l是一个参数，代表最大可能的距离值，用于初始化成本矩阵
-    cost_matrix = np.abs(DA - DB.T)
-    row_ind, col_ind = linear_sum_assignment(cost_matrix)
-    return dict(zip(row_ind, col_ind))
+def CDA(DA, DB, l):
+    cost_matrix = np.abs(DA - DB.T) # 计算代价矩阵
+    row_ind, col_ind = linear_sum_assignment(cost_matrix) # 使用linear_sum_assignment(匈牙利算法)函数找到使总匹配代价最小的匹配组合
+    
+    matching = {}
+    for i in range(len(row_ind)): # 遍历匹配结果，只有当匹配代价小于等于阈值 l 时，才将该匹配加入到结果中
+        if cost_matrix[row_ind[i], col_ind[i]] <= l:
+            matching[row_ind[i]] = col_ind[i]
+    
+    return matching
+
 
 # 使用CDA计算两个网络的最优全匹配
 def optimal_full_matching(A, B):
@@ -38,19 +53,30 @@ def link_precision_and_recall(matching, A, B):
     matched_edges_A = set()
     matched_edges_B = set()
 
+    # 遍历匹配结果中的每个节点对 (u, v)
     for u in matching:
         for v in range(A.shape[1]):
+            # 检查从网络 A 中的节点 u 到 v 的边是否存在，并且匹配中的 v 在网络 B 中的匹配节点是否在范围内
             if A[u, v] == 1 and v in matching and matching[v] in range(B.shape[1]) and B[matching[u], matching[v]] == 1:
+                # 如果边存在，则添加到匹配边集合中
                 matched_edges_A.add((u, v))
                 matched_edges_B.add((matching[u], matching[v]))
-
+                
+    # 计算真阳性（True Positive）在两个匹配边集合中的交集大小
     true_positive = len(matched_edges_A & matched_edges_B)
+    
+    # 计算可能的阳性数
     possible_positive_A = len(matched_edges_A)
     possible_positive_B = len(matched_edges_B)
 
+    # 计算精度 (Precision)
     precision = true_positive / possible_positive_A if possible_positive_A else 0
+    
+    # 计算召回率 (Recall)
     recall = true_positive / possible_positive_B if possible_positive_B else 0
+
     return precision, recall
+
 
 # 计算f_score
 def structural_f_score(precision, recall):
@@ -88,11 +114,8 @@ def DDA(A, B):
 # 检查渗透阈值： 每次接受匹配后，检查 best_f_score 是否达到或超过 percolation_threshold。如果是，则认为这个匹配是有效的，跳出内层循环，否则继续尝试其他匹配。
 # 结束循环： 如果没有更新过匹配 (updated 为 False)，则退出循环，返回最终的匹配结果 matching。
 def pda(seed_matching, A, B, percolation_threshold):
-    # percolation_threshold 控制了在每次尝试将节点 u 匹配到节点 v 时，是否接受这个匹配。
-    # 只有当 f_score 大于等于 percolation_threshold 时，才会接受这个匹配。
     matched_nodes = set(seed_matching.values())
     matching = seed_matching.copy()
-
     while True:
         updated = False
         for u in range(A.shape[0]):
@@ -103,22 +126,18 @@ def pda(seed_matching, A, B, percolation_threshold):
                     if v not in matching.values():
                         temp_matching = matching.copy()
                         temp_matching[u] = v
-
                         precision, recall = link_precision_and_recall(temp_matching, A, B)
                         f_score = structural_f_score(precision, recall)
-
                         if f_score > best_f_score:
                             best_f_score = f_score
                             best_match = v
-
-                if best_match is not None:
+                if best_match is not None and best_f_score >= percolation_threshold:
                     matching[u] = best_match
                     matched_nodes.add(best_match)
                     updated = True
-
+                    break  # 跳出内层循环，认为这个匹配是有效的
         if not updated:
             break
-
     return matching
 
 # 测试
